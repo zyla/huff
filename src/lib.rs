@@ -4,3 +4,4 @@ extern crate quickcheck;
 extern crate quickcheck_macros;
 
 pub mod heap;
+pub mod tree;
