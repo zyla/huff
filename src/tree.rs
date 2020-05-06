@@ -136,7 +136,13 @@ fn explore_tree(code: &mut Code, prefix: &mut Codeword, tree: &Tree) {
             prefix.pop_bit();
         }
         Tree::Leaf(symbol) => {
-            code[*symbol as usize] = prefix.clone();
+            code[*symbol as usize] = if prefix.is_empty() {
+                let mut cw = Codeword::empty();
+                cw.push_bit(false);
+                cw
+            } else {
+                prefix.clone()
+            };
         }
     }
 }
@@ -157,4 +163,10 @@ fn test_tree_to_code() {
     assert_eq!(format!("{:?}", code[b'B' as usize]), "[11]");
     assert_eq!(format!("{:?}", code[b'C' as usize]), "[100]");
     assert_eq!(format!("{:?}", code[b'E' as usize]), "[101]");
+}
+
+#[test]
+fn test_tree_to_code_one_symbol() {
+    let code = tree_to_code(&Tree::Leaf(b'A'));
+    assert_eq!(format!("{:?}", code[b'A' as usize]), "[0]");
 }
