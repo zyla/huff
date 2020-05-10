@@ -73,7 +73,39 @@ fn test_build_tree() {
     );
 }
 
-pub type Code = Vec<Codeword>;
+pub struct Code(Vec<Codeword>);
+
+impl Code {
+    pub fn empty() -> Self {
+        Code((0..NUM_SYMBOLS).map(|_| Codeword::empty()).collect())
+    }
+}
+
+impl std::ops::Index<u8> for Code {
+    type Output = Codeword;
+
+    fn index(&self, sym: u8) -> &Codeword {
+        &self.0[sym as usize]
+    }
+}
+
+impl std::ops::IndexMut<u8> for Code {
+    fn index_mut(&mut self, sym: u8) -> &mut Codeword {
+        &mut self.0[sym as usize]
+    }
+}
+
+impl std::fmt::Display for Code {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for sym in 0..NUM_SYMBOLS {
+            let cw = &self[sym as u8];
+            if !cw.is_empty() {
+                writeln!(f, "{}: {}", sym as u8 as char, cw)?;
+            }
+        }
+        Ok(())
+    }
+}
 
 pub const MAX_CODEWORD_BITS: usize = NUM_SYMBOLS;
 const NUM_CODEWORD_WORDS: usize = MAX_CODEWORD_BITS / 64;
@@ -86,11 +118,10 @@ pub const B1: bool = true;
 /// Stored as a fixed-length sequence of 64-bit words. Bits inside the words are stored in
 /// little-endian order (first bit of the sequence is at `1 << 0`, second at `1 << 1`, third at
 /// `1 << 2` etc.
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 // Invariant: all bits after bit_len are 0
 pub struct Codeword {
     // These probably shouldn't be public, as we have invariants!
-
     pub bit_len: usize,
     pub bits: [u64; NUM_CODEWORD_WORDS],
 }
@@ -132,25 +163,24 @@ impl Codeword {
     }
 }
 
-/// Codeword is formatted as a sequence of `0` and `1` characters enclosed by `[` ... `]`. Example:
+/// Codeword is formatted as a sequence of `0` and `1` characters.
 ///
 /// ```
 /// # use huff::tree::*;
-/// assert_eq!(format!("{:?}", Codeword::from_bits(&vec![B0, B1, B0, B1, B1, B0])), "[010110]");
+/// assert_eq!(format!("{}", Codeword::from_bits(&vec![B0, B1, B0, B1, B1, B0])), "010110");
 /// ```
-impl std::fmt::Debug for Codeword {
+impl std::fmt::Display for Codeword {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str("[")?;
         let bit_values = ["0", "1"];
         for i in 0..self.bit_len {
             f.write_str(bit_values[((self.bits[i / 64] >> (i % 64)) & 1) as usize])?;
         }
-        f.write_str("]")
+        Ok(())
     }
 }
 
 pub fn tree_to_code(tree: &Tree) -> Code {
-    let mut code: Code = (0..NUM_SYMBOLS).map(|_| Codeword::empty()).collect();
+    let mut code = Code::empty();
     explore_tree(&mut code, &mut Codeword::empty(), tree);
     code
 }
@@ -166,7 +196,7 @@ fn explore_tree(code: &mut Code, prefix: &mut Codeword, tree: &Tree) {
             prefix.pop_bit();
         }
         Tree::Leaf(symbol) => {
-            code[*symbol as usize] = if prefix.is_empty() {
+            code[*symbol] = if prefix.is_empty() {
                 let mut cw = Codeword::empty();
                 cw.push_bit(false);
                 cw
@@ -189,14 +219,14 @@ fn test_tree_to_code() {
             Box::new(Tree::Leaf(b'B')),
         )),
     ));
-    assert_eq!(format!("{:?}", code[b'A' as usize]), "[0]");
-    assert_eq!(format!("{:?}", code[b'B' as usize]), "[11]");
-    assert_eq!(format!("{:?}", code[b'C' as usize]), "[100]");
-    assert_eq!(format!("{:?}", code[b'E' as usize]), "[101]");
+    assert_eq!(format!("{}", code[b'A']), "0");
+    assert_eq!(format!("{}", code[b'B']), "11");
+    assert_eq!(format!("{}", code[b'C']), "100");
+    assert_eq!(format!("{}", code[b'E']), "101");
 }
 
 #[test]
 fn test_tree_to_code_one_symbol() {
     let code = tree_to_code(&Tree::Leaf(b'A'));
-    assert_eq!(format!("{:?}", code[b'A' as usize]), "[0]");
+    assert_eq!(format!("{}", code[b'A']), "0");
 }
