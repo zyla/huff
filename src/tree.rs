@@ -5,6 +5,16 @@ use crate::heap::keyed::Keyed;
 
 pub type Frequencies = Vec<(u8, usize)>;
 
+/// Count the number of occurences of each character in the input.
+///
+/// The frequencies are returned as a vector of (character, count) pairs.
+///
+/// ```
+/// assert_eq!(
+///     huff::tree::compute_frequencies(b"ABCAAABABABC"),
+///     vec![(b'A', 6), (b'B', 4), (b'C', 2)]
+/// );
+/// ```
 pub fn compute_frequencies(input: &[u8]) -> Frequencies {
     let mut table: Vec<usize> = (0..NUM_SYMBOLS).map(|_| 0).collect();
     for s in input {
@@ -16,14 +26,6 @@ pub fn compute_frequencies(input: &[u8]) -> Frequencies {
         .filter(|(_, freq)| *freq > 0)
         .map(|(s, freq)| (s as u8, freq))
         .collect()
-}
-
-#[test]
-fn test_compute_frequencies() {
-    assert_eq!(
-        compute_frequencies(b"ABCAAABABABC"),
-        vec![(b'A', 6), (b'B', 4), (b'C', 2)]
-    );
 }
 
 type Symbol = u8;
@@ -73,12 +75,22 @@ fn test_build_tree() {
 
 pub type Code = Vec<Codeword>;
 
-const MAX_CODEWORD_BITS: usize = NUM_SYMBOLS;
+pub const MAX_CODEWORD_BITS: usize = NUM_SYMBOLS;
 const NUM_CODEWORD_WORDS: usize = MAX_CODEWORD_BITS / 64;
 
+pub const B0: bool = false;
+pub const B1: bool = true;
+
+/// A sequence of bits of maximum length `MAX_CODEWORD_BITS`.
+///
+/// Stored as a fixed-length sequence of 64-bit words. Bits inside the words are stored in
+/// little-endian order (first bit of the sequence is at `1 << 0`, second at `1 << 1`, third at
+/// `1 << 2` etc.
 #[derive(PartialEq, Eq, Clone)]
 // Invariant: all bits after bit_len are 0
 pub struct Codeword {
+    // These probably shouldn't be public, as we have invariants!
+
     pub bit_len: usize,
     pub bits: [u64; NUM_CODEWORD_WORDS],
 }
@@ -91,16 +103,28 @@ impl Codeword {
         }
     }
 
+    pub fn from_bits(bits: &[bool]) -> Self {
+        let mut cw = Self::empty();
+        for &bit in bits {
+            cw.push_bit(bit);
+        }
+        cw
+    }
+
     pub fn is_empty(&self) -> bool {
         self.bit_len == 0
     }
 
+    /// Adds a bit to the end to the sequence.
     pub fn push_bit(&mut self, bit: bool) {
         let index = self.bit_len;
         self.bits[index / 64] |= (bit as u64) << (index % 64);
         self.bit_len += 1;
     }
 
+    /// Removes a bit from the end of the sequence, without returning it.
+    ///
+    /// Panics if the sequence is empty.
     pub fn pop_bit(&mut self) {
         let index = self.bit_len - 1;
         self.bits[index / 64] &= !(1 << (index % 64));
@@ -108,6 +132,12 @@ impl Codeword {
     }
 }
 
+/// Codeword is formatted as a sequence of `0` and `1` characters enclosed by `[` ... `]`. Example:
+///
+/// ```
+/// # use huff::tree::*;
+/// assert_eq!(format!("{:?}", Codeword::from_bits(&vec![B0, B1, B0, B1, B1, B0])), "[010110]");
+/// ```
 impl std::fmt::Debug for Codeword {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str("[")?;
