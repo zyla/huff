@@ -1,54 +1,88 @@
-use crate::tree;
 use crate::tree::Code;
+
+#[cfg(test)]
+use crate::tree;
 
 const WORD_SIZE_IN_BITS: usize = 64;
 
-/// Encode a sequence of symbols using the given code.
-pub fn encode(code: &Code, input: &[u8]) -> Vec<u64> {
-    // Buffer of bits to output.
-    let mut buf: u64 = 0;
-    // Number of bits in buffer.
-    let mut offset: usize = 0;
+pub struct Encoder<'a> {
+    code: &'a Code,
+    /// Buffer of bits to output.
+    buf: u64,
+    /// Number of bits in buffer.
+    offset: usize,
+}
 
-    let mut output: Vec<u64> = vec![];
+impl<'a> Encoder<'a> {
+    pub fn new(code: &'a Code) -> Self {
+        Encoder {
+            code,
+            buf: 0,
+            offset: 0,
+        }
+    }
 
-    for &sym in input {
-        let cw = &code[sym];
+    /// Encode a chunk of the input to the given output buffer.
+    /// Stops when either input is exhausted or buffer is full.
+    /// Returns the number of input bytes consumed, and the number of u64 words filled in the buffer.
+    pub fn encode(&mut self, input: &[u8], output: &mut [u64]) -> (usize, usize) {
+        let mut num_output_words_written = 0;
 
-        // Number of full words we'll copy.
-        // Note: (W * num_words) may be larger than number of full words of codeword.
-        // This counts codeword bits and leftovers in the buffer together.
-        let num_words = (offset + cw.bit_len) / WORD_SIZE_IN_BITS;
+        for (index, &sym) in input.iter().enumerate() {
+            let cw = &self.code[sym];
 
-        // Copy all full words.
-        for w in 0..num_words {
-            output.push(buf | (cw.bits[w] << offset));
-            buf = cw.bits[w] >> (WORD_SIZE_IN_BITS - offset);
+            // Number of full words we'll copy.
+            // Note: (W * num_words) may be larger than number of full words of codeword.
+            // This counts codeword bits and leftovers in the buffer together.
+            let num_words = (self.offset + cw.bit_len) / WORD_SIZE_IN_BITS;
+
+            if num_output_words_written + num_words >= output.len() - 1 {
+                return (index, num_output_words_written);
+            }
+
+            // Copy all full words.
+            for w in 0..num_words {
+                output[num_output_words_written] = self.buf | (cw.bits[w] << self.offset);
+                num_output_words_written += 1;
+                self.buf = cw.bits[w] >> (WORD_SIZE_IN_BITS - self.offset);
+            }
+
+            // At this point, we know:
+            // - we have consumed num_words*W bits of codeword.
+            // - we know that (cw->len - num_words*W) < W. (Proof?)
+            // So we can copy one last part of the codeword, into the partially filled buffer.
+            self.buf |= cw.bits[num_words] << self.offset;
+
+            // Shift the offset by codeword len.
+            self.offset = (self.offset + cw.bit_len) % WORD_SIZE_IN_BITS;
         }
 
-        // At this point, we know:
-        // - we have consumed num_words*W bits of codeword.
-        // - we know that (cw->len - num_words*W) < W. (Proof?)
-        // So we can copy one last part of the codeword, into the partially filled buffer.
-        buf |= cw.bits[num_words] << offset;
-
-        // Shift the offset by codeword len.
-        offset = (offset + cw.bit_len) % WORD_SIZE_IN_BITS;
+        (input.len(), num_output_words_written)
     }
 
-    // One last (partial) output word.
-    if offset > 0 {
-        output.push(buf);
+    pub fn finish(&mut self, output: &mut [u64]) -> usize {
+        // One last (partial) output word.
+        if self.offset > 0 {
+            output[0] = self.buf;
+            self.offset = 0;
+            self.buf = 0;
+            1
+        } else {
+            0
+        }
     }
-
-    output
 }
 
 /// Build code for input and encode it using the code.
+#[cfg(test)]
 pub fn full_encode(input: &[u8]) -> (Code, Vec<u64>) {
     let code = tree::tree_to_code(&tree::build_tree(&tree::compute_frequencies(input)));
-    let output = encode(&code, input);
-    (code, output)
+    let mut encoder = Encoder::new(&code);
+    let mut output: Vec<u64> = (0..input.len()).map(|_| 0).collect();
+    let (input_consumed, mut output_consumed) = encoder.encode(input, &mut output);
+    assert_eq!(input_consumed, input.len());
+    output_consumed += encoder.finish(&mut output[output_consumed..]);
+    (code, output[..output_consumed].to_vec())
 }
 
 #[cfg(test)]
