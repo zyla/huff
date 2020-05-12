@@ -36,7 +36,7 @@ impl<'a> Encoder<'a> {
             // This counts codeword bits and leftovers in the buffer together.
             let num_words = (self.offset + cw.bit_len) / WORD_SIZE_IN_BITS;
 
-            if num_output_words_written + num_words >= output.len() - 1 {
+            if num_output_words_written + num_words > output.len() {
                 return (index, num_output_words_written);
             }
 
